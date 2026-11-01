@@ -72,6 +72,7 @@ installed or relocated package, browser host, or other target is qualified by
 this route. Installation and relocation acceptance is reserved for Phase 4.
 
 The workflow in [CI activation](ci-activation.md) invokes this same command on
-the selected hosted runner. It is prepared for review but has not been
-activated or executed; a skipped or absent hosted job is unrun evidence, not a
-passing result.
+the selected hosted runner. Its first manual run passed on the reviewed public
+source commit; the linked activation record identifies the run, source SHA,
+runner image, toolchain, and named checks. This source-tree result does not
+qualify installation, relocation, or the deferred real-core behaviors above.

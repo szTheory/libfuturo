@@ -1,8 +1,8 @@
 # GitHub Actions preparation and activation record
 
-**Status:** Local configuration and source-only candidate review are complete.
-Repository publication, workflow activation, and hosted execution remain
-stopped pending the maintainer's decision on the exact package.
+**Status:** The approved source-only candidate is public, the activation gate is
+enabled, and one bounded manual hosted run passed. The workflow remains
+manual-only; no recurring trigger or retry is configured.
 
 ## Prepared configuration
 
@@ -49,22 +49,36 @@ bounds a private-run estimate at `$1.24` before any included compute; this is a
 policy calculation, not an account-specific bill or authorization to run
 privately.
 
-The proposed acceptance route is one manual dispatch after the repository's
-public visibility and account prerequisites are rechecked. No recurring
+The approved acceptance route was one manual dispatch after the repository's
+public visibility and account prerequisites were rechecked. No recurring
 trigger, retry, cache, or artifact upload is configured. Account-specific plan,
 usage, and budget evidence belongs in the private execution record, not this
-public-facing document. Hosted duration remains unmeasured, and local timing is
-not a hosted billing estimate.
+public-facing document.
 
 Official policy checked on 2026-10-31: [GitHub Actions billing and usage](https://docs.github.com/en/actions/concepts/billing-and-usage),
 [GitHub-hosted runner specifications](https://docs.github.com/en/actions/reference/runners/github-hosted-runners),
 and [Actions runner pricing](https://docs.github.com/en/billing/reference/actions-runner-pricing).
 
-## Current status
+## Hosted verification
 
-This checkout has only been verified locally. No hosted job has run, so this
-document makes no claim about hosted results or account-specific costs. Before
-using the workflow, confirm the repository visibility and account prerequisites
-for the selected runner, then set the activation variable as part of the
-repository's CI review. Do not enable recurring triggers or retries without a
-separate review.
+- Repository: [`szTheory/libfuturo`](https://github.com/szTheory/libfuturo),
+  public visibility verified before activation.
+- Run: [41255584562](https://github.com/szTheory/libfuturo/actions/runs/41255584562),
+  `workflow_dispatch` on `main`; conclusion `success`, with no skipped job or
+  required step.
+- Source commit: `c11145bb5b4197c5a65ef8cc570f1eededdd7ea4` (the reviewed
+  source-only candidate tree).
+- Runner image: `macos-15`, `macos15` image `20261028.0489.1`, macOS 15.8.2
+  arm64, Apple Clang 17.0.0 (`clang-1700.0.13.5`), CMake/CTest 4.4.4,
+  macOS SDK 15.5.
+- `./scripts/check.sh` passed. `synthetic_tracer`, `synthetic_session`,
+  `oracle_negative_control`, `synthetic_boundaries`, and `nesturbator_probe`
+  all executed and passed. CTest reported 1.02 seconds; the hosted job took
+  18 seconds.
+- This was the single approved run. Standard hosted-runner compute for a
+  public repository is free under the current GitHub policy. No cache or
+  artifact storage was configured.
+
+This verifies the selected source-tree route on the published arm64 runner. It
+does not qualify installation, relocation, browser play, or the deferred
+real-core session and save behaviors.

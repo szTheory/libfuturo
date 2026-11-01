@@ -31,6 +31,6 @@ cartridge loading, frames, audio/video, durable saves, or restore. The installed
 and relocated consumer journey remains Phase 4 work.
 
 The GitHub Actions workflow is manual-only and gated by a repository variable.
-It has not been run on a hosted runner; a successful local check does not imply
-a hosted result. See [CI activation](docs/ci-activation.md) for the workflow
-configuration and runner cost policy.
+Its first approved public `macos-15` run passed on the published source
+candidate. See [CI activation](docs/ci-activation.md) for the exact source SHA,
+runner identity, test results, and cost policy.
