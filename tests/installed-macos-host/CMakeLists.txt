@@ -316,7 +316,7 @@ if(BUILD_TESTING)
   add_test(NAME host_audio COMMAND "$<TARGET_FILE:host_audio>")
   set_tests_properties(host_audio PROPERTIES
     PASS_REGULAR_EXPRESSION
-      "host_audio: pool=capacity5 frames=54,800,801 bounds=checked drop=newest tokens=duplicate,stale rejected retirement=concurrent lock-free=10/10 manual=s16-mono-48000 blocks=54,800,801 order=pass mute-output=silent,restored-source restore-transition=bounded,stable-after=[0-2]-of-3-blocks duplicate=stable completion=retired callback=pool-only close=lease-drained forbidden-controls=guest,player-stop-rejected result=pass"
+      "host_audio: pool=capacity5 frames=54,800,801 bounds=checked drop=newest tokens=duplicate,stale rejected retirement=concurrent lock-free=10/10 manual=s16-input,float32-render-mono-48000 blocks=54,800,801 order=pass mute-output=silent,restored-source restore-transition=bounded,stable-after=[0-2]-of-3-blocks duplicate=stable completion=retired callback=pool-only close=lease-drained forbidden-controls=guest,player-stop-rejected result=pass"
     TIMEOUT 30
   )
 
