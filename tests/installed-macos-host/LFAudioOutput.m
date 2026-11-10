@@ -104,6 +104,15 @@ static uint64_t lf_audio_monotonic_nanoseconds(void) {
   }
 
   [_engine attachNode:_player];
+  if (_manualRendering &&
+      ![_engine enableManualRenderingMode:AVAudioEngineManualRenderingModeOffline
+                                   format:_sourceFormat
+                        maximumFrameCount:
+                            (AVAudioFrameCount)LF_AUDIO_BUFFER_POOL_MAX_FRAMES
+                                     error:nil]) {
+    _constructionError = lf_audio_error();
+    return self;
+  }
   [_engine connect:_player to:_engine.mainMixerNode format:_sourceFormat];
   for (NSUInteger index = 0U; index < LF_AUDIO_BUFFER_POOL_CAPACITY; ++index) {
     AVAudioPCMBuffer *buffer = [[AVAudioPCMBuffer alloc]
@@ -115,15 +124,6 @@ static uint64_t lf_audio_monotonic_nanoseconds(void) {
       return self;
     }
     [_buffers addObject:buffer];
-  }
-
-  if (_manualRendering &&
-      ![_engine enableManualRenderingMode:AVAudioEngineManualRenderingModeOffline
-                                   format:_sourceFormat
-                        maximumFrameCount:
-                            (AVAudioFrameCount)LF_AUDIO_BUFFER_POOL_MAX_FRAMES
-                                     error:nil]) {
-    _constructionError = lf_audio_error();
   }
   return self;
 }

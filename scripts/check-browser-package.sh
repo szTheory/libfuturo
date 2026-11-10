@@ -12,6 +12,8 @@ elapsed_seconds() {
 }
 
 readonly OUTER_ROUTE_START_NS="$(monotonic_now_ns)"
+readonly LIBFUTURO_RETURN_UID="$(id -u)"
+readonly LIBFUTURO_RETURN_GID="$(id -g)"
 
 readonly SDK_IMAGE='emscripten/emsdk:7.0.0@sha256:6bd7aef93408b10bf7b36642cb7c91119b302f720b9ec2d20439f73cf07fe894'
 readonly SDK_PLATFORM='linux/amd64'
@@ -220,6 +222,8 @@ readonly OUTER_SETUP_SECONDS="$(elapsed_seconds "$OUTER_ROUTE_START_NS" "$OUTER_
 
 set +e
 docker run --rm --platform "$SDK_PLATFORM" \
+  -e LIBFUTURO_RETURN_UID="$LIBFUTURO_RETURN_UID" \
+  -e LIBFUTURO_RETURN_GID="$LIBFUTURO_RETURN_GID" \
   -e LIBFUTURO_SDK_IMAGE="$SDK_IMAGE" \
   -e LIBFUTURO_SDK_PLATFORM="$SDK_PLATFORM" \
   -e LIBFUTURO_SDK_RESOLVED_PLATFORM="$RESOLVED_IMAGE_PLATFORM" \
@@ -651,6 +655,7 @@ docker run --rm --platform "$SDK_PLATFORM" \
     if [[ "$LIBFUTURO_BUILD_PACKAGE" == true ]]; then
       printf "Relocated package result: prefix=/work/relocated identity=pass nesturbator=absent\n"
     fi
+    chown -R "$LIBFUTURO_RETURN_UID:$LIBFUTURO_RETURN_GID" /work/evidence
   ' 2>&1 | tee "$ROUTE_LOG"
 route_status=${PIPESTATUS[0]}
 set -e

@@ -10,6 +10,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const checker = path.join(root, "cmake/CheckWorkflow.cmake");
 const nativePath = path.join(root, ".github/workflows/native.yml");
 const checkScript = path.join(root, "scripts/check.sh");
+const browserPackageScript = path.join(root, "scripts/check-browser-package.sh");
 const expectedCheckScriptSha256 = "2e03ed0d0f3ebb101c129244f3289c7e10346c6cab14fe192fa833832947a37d";
 
 function checkWorkflow(content, workflowKind = "native") {
@@ -80,6 +81,15 @@ test("browser workflow contract accepts one unconditional Linux qualification jo
   const browserPath = path.join(root, ".github/workflows/browser.yml");
   const result = checkWorkflow(readFileSync(browserPath, "utf8"), "browser");
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+});
+
+test("browser container returns evidence ownership to the host runner", () => {
+  const source = readFileSync(browserPackageScript, "utf8");
+  assert.match(source, /readonly LIBFUTURO_RETURN_UID="\$\(id -u\)"/);
+  assert.match(source, /readonly LIBFUTURO_RETURN_GID="\$\(id -g\)"/);
+  assert.match(source, /-e LIBFUTURO_RETURN_UID="\$LIBFUTURO_RETURN_UID"/);
+  assert.match(source, /-e LIBFUTURO_RETURN_GID="\$LIBFUTURO_RETURN_GID"/);
+  assert.match(source, /chown -R "\$LIBFUTURO_RETURN_UID:\$LIBFUTURO_RETURN_GID" \/work\/evidence/);
 });
 
 test("browser workflow contract rejects trigger and coverage mutations", () => {
