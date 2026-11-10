@@ -951,6 +951,9 @@ async function runHostInputAudio(cdp, packageInfo, pagePayload, evidenceDir) {
     await waitForValue(cdp, "window.LibFuturoHost.report()",
       value => value.started && value.progress >= 16 && value.audio_frames_produced >= 16,
       "trusted Start retry and frozen startup/steady PCM sequence", 10_000);
+    await waitForValue(cdp, "window.LibFuturoHost.report()",
+      value => value.audio_graph_rms > 0 && value.audio_active,
+      "active browser audio graph after verified PCM frames", 10_000);
     const running = await evaluate(cdp, "window.LibFuturoHost.report()");
     const expectedCounts = [54, 801, 801, 800, 801, 800, 801, 800, 801, 800,
       801, 801, 800, 801, 800];
