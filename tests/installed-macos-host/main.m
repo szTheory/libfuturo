@@ -1998,6 +1998,52 @@ static LFProductionViewResult lf_compare_production_geometry(
         (void)frame;
         (void)audioSamples;
         (void)capacity;
+        const char *eventName = NULL;
+        switch (event) {
+          case LFHostSessionEventAdvanceStarted:
+            eventName = "advance-started";
+            break;
+          case LFHostSessionEventAdvanceFinished:
+            eventName = "advance-finished";
+            break;
+          case LFHostSessionEventInstanceDestroyed:
+            eventName = "instance-destroyed";
+            break;
+          case LFHostSessionEventContentReleased:
+            eventName = "content-released";
+            break;
+          case LFHostSessionEventInstanceCreated:
+            eventName = "instance-created";
+            break;
+          case LFHostSessionEventLoadStarted:
+            eventName = "load-started";
+            break;
+          case LFHostSessionEventLoadFinished:
+            eventName = "load-finished";
+            break;
+          case LFHostSessionEventOutputBuffersAllocated:
+            eventName = "output-buffers-allocated";
+            break;
+          case LFHostSessionEventLoadAccepted:
+            eventName = "load-accepted";
+            break;
+          case LFHostSessionEventInputSampled:
+            eventName = "input-sampled";
+            break;
+          case LFHostSessionEventCoreAdvanceStarted:
+            eventName = "core-advance-started";
+            break;
+          case LFHostSessionEventOutputBuffersReleased:
+            eventName = "output-buffers-released";
+            break;
+          case LFHostSessionEventFrameInvalidationScheduled:
+            eventName = "frame-invalidation-scheduled";
+            break;
+        }
+        if (eventName != NULL) {
+          lf_append_test_progress([NSString
+              stringWithFormat:@"session-event=%s\n", eventName]);
+        }
         if (event != LFHostSessionEventInputSampled) {
           return;
         }
@@ -2026,6 +2072,9 @@ static LFProductionViewResult lf_compare_production_geometry(
         !strongSelf.testPanelFlow && !strongSelf.testCliRetry &&
         !strongSelf.testSchedulerRetry &&
         strongSelf.testDrainMode == LFHostTestDrainModeNone;
+    if (strongSelf.testProductionView) {
+      lf_append_test_progress(@"production-view: audio-init=begin\n");
+    }
     LFAudioOutput *audioOutput =
         enableAudioOutput
             ? [[LFAudioOutput alloc]
@@ -2033,6 +2082,11 @@ static LFProductionViewResult lf_compare_production_geometry(
                   requirePlaybackEvidence:strongSelf.testProductionView
                   lockFreeCheckOverride:nil]
             : nil;
+    if (strongSelf.testProductionView) {
+      lf_append_test_progress([NSString
+          stringWithFormat:@"production-view: audio-init=returned object=%d\n",
+                               audioOutput != nil]);
+    }
     lf_live_audio_output = audioOutput;
     __block __weak LFHostSession *weakSession = nil;
     LFHostClock clock = nil;
@@ -2040,6 +2094,9 @@ static LFProductionViewResult lf_compare_production_geometry(
         !strongSelf->_testSchedulerFaultApplied) {
       clock = ^uint64_t{ return UINT64_MAX; };
       strongSelf->_testSchedulerFaultApplied = YES;
+    }
+    if (strongSelf.testProductionView) {
+      lf_append_test_progress(@"production-view: session-init=begin\n");
     }
     LFHostSession *session = [[LFHostSession alloc]
         initWithFrameHandler:^(LFHostFrame *frame) {
@@ -2068,12 +2125,20 @@ static LFProductionViewResult lf_compare_production_geometry(
              observer:observer
       outputAllocator:allocator
           audioOutput:audioOutput];
+    if (strongSelf.testProductionView) {
+      lf_append_test_progress([NSString
+          stringWithFormat:@"production-view: session-init=returned object=%d\n",
+                               session != nil]);
+    }
     weakSession = session;
     strongSelf->_session = session;
     [session setAudioMuted:strongSelf->_audioMuted];
     [session setInputButtons:strongSelf.testProductionView
                                  ? UINT32_C(0x0001)
                                  : strongSelf->_inputState.buttons];
+    if (strongSelf.testProductionView) {
+      lf_append_test_progress(@"production-view: open-call=begin\n");
+    }
     [session openContentAtPath:path completion:^(BOOL success, NSError *error) {
       LFHostApplicationDelegate *completedSelf = weakSelf;
       if (completedSelf == nil || completedSelf->_session != weakSession ||
@@ -2122,6 +2187,9 @@ static LFProductionViewResult lf_compare_production_geometry(
       }
       [completedSelf showOpenError:error];
     }];
+    if (strongSelf.testProductionView) {
+      lf_append_test_progress(@"production-view: open-call=returned\n");
+    }
   };
   LFHostSession *previousSession = _session;
   _session = nil;
