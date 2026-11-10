@@ -393,6 +393,22 @@ async function waitForValue(cdp, expression, predicate, label, timeout = 10_000)
   throw new Error("timed out waiting for " + label);
 }
 
+async function suspendAudioWithQueuedSource(cdp, timeout = 10_000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const before = await evaluate(cdp, `(() => {
+      const report = window.LibFuturoHost.report();
+      if (report.paused || report.audio_context_state !== "running" ||
+          report.audio_queue_frames === 0 || report.audio_queue_samples === 0 ||
+          !report.audio_active) return null;
+      return window.LibFuturoHost.audioContext().suspend().then(() => report);
+    })()`);
+    if (before !== null) return before;
+    await delay(50);
+  }
+  throw new Error("timed out waiting to suspend audio with a queued source");
+}
+
 async function captureModuleRuntime(cdp, label, establishInitial = false) {
   return evaluate(cdp, `(() => {
     const page = window;
@@ -1350,11 +1366,7 @@ async function runHostUi(cdp, browserCdp, targetId, packageInfo, pagePayload, ev
     const audioResumed = await waitForValue(cdp, "window.LibFuturoHost.report()",
       value => !value.paused && value.audio_context_state === "running" && value.progress > paused.progress,
       "resume before audio-interruption UI check");
-    const beforeAudioSuspend = await waitForValue(cdp, "window.LibFuturoHost.report()",
-      value => !value.paused && value.audio_context_state === "running" &&
-        value.audio_queue_frames > 0 && value.audio_queue_samples > 0 && value.audio_active,
-      "nonempty active audio queue before UI interruption");
-    await evaluate(cdp, "window.LibFuturoHost.audioContext().suspend()");
+    const beforeAudioSuspend = await suspendAudioWithQueuedSource(cdp);
     const audioPaused = await waitForValue(cdp, "window.LibFuturoHost.report()",
       value => value.paused && value.audio_context_state === "suspended" && value.input_buttons === 0 && value.audio_queue_frames === 0,
       "audio interruption presentation");
