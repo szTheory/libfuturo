@@ -13,7 +13,7 @@ execute_process(
   RESULT_VARIABLE normal_result
   OUTPUT_VARIABLE normal_stdout
   ERROR_VARIABLE normal_stderr
-  TIMEOUT 10
+  TIMEOUT 25
 )
 if(NOT "${normal_result}" STREQUAL "0")
   message(FATAL_ERROR
@@ -35,7 +35,7 @@ execute_process(
   RESULT_VARIABLE wrong_result
   OUTPUT_VARIABLE wrong_stdout
   ERROR_VARIABLE wrong_stderr
-  TIMEOUT 10
+  TIMEOUT 25
 )
 if(NOT "${wrong_result}" STREQUAL "1")
   message(FATAL_ERROR

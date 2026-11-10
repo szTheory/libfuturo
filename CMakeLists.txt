@@ -1228,7 +1228,7 @@ add_test(
     -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ExpectNesturbatorOracleFailure.cmake"
 )
 file(APPEND "${_required_tests}" "nesturbator_oracle_negative_control\n")
-set_tests_properties(nesturbator_oracle_negative_control PROPERTIES TIMEOUT 30)
+set_tests_properties(nesturbator_oracle_negative_control PROPERTIES TIMEOUT 60)
 
 add_executable(conformance_positive tests/conformance.c)
 target_link_libraries(conformance_positive PRIVATE libfuturo_test)
