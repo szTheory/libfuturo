@@ -49,6 +49,7 @@ typedef struct LFAudioOutputEvidence {
 - (LFAudioOutputEvidence)evidence;
 - (nullable NSString *)liveEvidenceMarker;
 - (AVAudioFormat *)sourceFormat;
+- (AVAudioFormat *)manualRenderingFormat;
 - (BOOL)playerStoppedPostconditionForIsPlaying:(BOOL)isPlaying;
 - (BOOL)engineStoppedPostconditionForIsRunning:(BOOL)isRunning;
 @end

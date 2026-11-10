@@ -3,6 +3,7 @@
 
 #include "LFAudioBufferPool.h"
 
+#include <math.h>
 #include <pthread.h>
 #include <sched.h>
 #include <stdint.h>
@@ -240,11 +241,15 @@ static BOOL run_manual_render_checks(void) {
       initWithManualRendering:YES
       requirePlaybackEvidence:NO
       lockFreeCheckOverride:nil];
-  AVAudioFormat *format = output.sourceFormat;
-  if (output == nil || format == nil ||
-      format.commonFormat != AVAudioPCMFormatInt16 ||
-      format.channelCount != 1U || format.sampleRate != 48000.0 ||
-      !format.isInterleaved) {
+  AVAudioFormat *sourceFormat = output.sourceFormat;
+  AVAudioFormat *renderFormat = output.manualRenderingFormat;
+  if (output == nil || sourceFormat == nil || renderFormat == nil ||
+      sourceFormat.commonFormat != AVAudioPCMFormatInt16 ||
+      sourceFormat.channelCount != 1U || sourceFormat.sampleRate != 48000.0 ||
+      !sourceFormat.isInterleaved ||
+      renderFormat.commonFormat != AVAudioPCMFormatFloat32 ||
+      renderFormat.channelCount != 1U || renderFormat.sampleRate != 48000.0 ||
+      renderFormat.isInterleaved) {
     return manual_fail("source format");
   }
 
@@ -268,9 +273,9 @@ static BOOL run_manual_render_checks(void) {
   }
 
   AVAudioPCMBuffer *rendered = [[AVAudioPCMBuffer alloc]
-      initWithPCMFormat:format frameCapacity:801U];
-  if (rendered == nil || rendered.int16ChannelData == NULL ||
-      rendered.int16ChannelData[0] == NULL) {
+      initWithPCMFormat:renderFormat frameCapacity:801U];
+  if (rendered == nil || rendered.floatChannelData == NULL ||
+      rendered.floatChannelData[0] == NULL) {
     return manual_fail("manual render buffer");
   }
   const AVAudioFrameCount frameCounts[] = {54U, 800U, 801U};
@@ -284,8 +289,9 @@ static BOOL run_manual_render_checks(void) {
         error != nil || rendered.frameLength != frameCounts[block]) {
       return manual_fail("manual render frame count");
     }
+    const float expected = (float)expectedSamples[block] / 32768.0F;
     for (AVAudioFrameCount frame = 0U; frame < frameCounts[block]; ++frame) {
-      if (rendered.int16ChannelData[0][frame] != expectedSamples[block]) {
+      if (fabsf(rendered.floatChannelData[0][frame] - expected) > 0.000001F) {
         return manual_fail("manual rendered block order or sample data");
       }
     }
@@ -329,12 +335,15 @@ static BOOL render_block(LFAudioOutput *output, AVAudioPCMBuffer *rendered,
       error != nil || rendered.frameLength != frameCount) {
     return NO;
   }
+  const float expected = expectSilence
+                             ? 0.0F
+                             : (float)expectedSample / 32768.0F;
   for (AVAudioFrameCount frame = 0U; frame < frameCount; ++frame) {
-    const int16_t sample = rendered.int16ChannelData[0][frame];
-    if (expectSilence ? sample != 0 : sample != expectedSample) {
+    const float sample = rendered.floatChannelData[0][frame];
+    if (fabsf(sample - expected) > 0.000001F) {
       (void)fprintf(stderr,
-                     "host_audio: rendered output mismatch frame=%u expected=%d actual=%d silence=%d\n",
-                     (unsigned int)frame, expectedSample, sample,
+                     "host_audio: rendered output mismatch frame=%u expected=%.8f actual=%.8f silence=%d\n",
+                     (unsigned int)frame, expected, sample,
                      expectSilence ? 1 : 0);
       return NO;
     }
@@ -347,8 +356,11 @@ static BOOL run_manual_mute_checks(NSUInteger *transitionBlocksObserved) {
       initWithManualRendering:YES
       requirePlaybackEvidence:NO
       lockFreeCheckOverride:nil];
-  AVAudioFormat *format = output.sourceFormat;
-  if (output == nil || format == nil) {
+  AVAudioFormat *format = output.manualRenderingFormat;
+  if (output == nil || output.sourceFormat == nil || format == nil ||
+      format.commonFormat != AVAudioPCMFormatFloat32 ||
+      format.channelCount != 1U || format.sampleRate != 48000.0 ||
+      format.isInterleaved) {
     return manual_fail("mute output construction");
   }
 
@@ -378,8 +390,8 @@ static BOOL run_manual_mute_checks(NSUInteger *transitionBlocksObserved) {
 
   AVAudioPCMBuffer *rendered = [[AVAudioPCMBuffer alloc]
       initWithPCMFormat:format frameCapacity:801U];
-  if (rendered == nil || rendered.int16ChannelData == NULL ||
-      rendered.int16ChannelData[0] == NULL ||
+  if (rendered == nil || rendered.floatChannelData == NULL ||
+      rendered.floatChannelData[0] == NULL ||
       !render_block(output, rendered, 54U, 0, YES)) {
     return manual_fail("muted output must render silence");
   }
@@ -394,7 +406,8 @@ static BOOL run_manual_mute_checks(NSUInteger *transitionBlocksObserved) {
   }
   BOOL restoredStable = NO;
   NSUInteger transitionBlocks = 0U;
-  int16_t previousSample = 0;
+  float previousSample = 0.0F;
+  const float restoredValue = (float)INT16_C(3600) / 32768.0F;
   for (NSUInteger block = 0U; block < 3U; ++block) {
     NSError *error = nil;
     if (![output renderManualFrames:801U toBuffer:rendered error:&error] ||
@@ -403,11 +416,12 @@ static BOOL run_manual_mute_checks(NSUInteger *transitionBlocksObserved) {
     }
     BOOL blockStable = YES;
     for (AVAudioFrameCount frame = 0U; frame < 801U; ++frame) {
-      const int16_t sample = rendered.int16ChannelData[0][frame];
-      if (sample < 0 || sample > INT16_C(3600) || sample < previousSample) {
+      const float sample = rendered.floatChannelData[0][frame];
+      if (!isfinite(sample) || sample < 0.0F ||
+          sample > restoredValue + 0.000001F || sample < previousSample) {
         return manual_fail("restored output transition bounds and order");
       }
-      if (sample != INT16_C(3600)) {
+      if (fabsf(sample - restoredValue) > 0.000001F) {
         blockStable = NO;
       }
       previousSample = sample;
@@ -466,7 +480,8 @@ int main(void) {
     (void)printf(
         "host_audio: pool=capacity5 frames=54,800,801 bounds=checked "
         "drop=newest tokens=duplicate,stale rejected retirement=concurrent "
-        "lock-free=10/10 manual=s16-mono-48000 blocks=54,800,801 order=pass "
+        "lock-free=10/10 manual=s16-input,float32-render-mono-48000 "
+        "blocks=54,800,801 order=pass "
         "mute-output=silent,restored-source "
         "restore-transition=bounded,stable-after=%lu-of-3-blocks "
         "duplicate=stable "
