@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Atari 7800 session</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, sans-serif;
+        color: CanvasText;
+        background: Canvas;
+      }
+      * { box-sizing: border-box; }
+      body { min-width: 0; margin: 0; padding: 16px; color: CanvasText; background: Canvas; }
+      main { width: 100%; max-width: 640px; margin-inline: auto; }
+      h1 { margin: 0 0 16px; font-size: 24px; font-weight: 600; line-height: 1.2; }
+      #file-controls, #session-controls {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+      }
+      label { display: flex; min-height: 44px; align-items: center; font-size: 14px; line-height: 1.5; }
+      input[type="file"] { max-width: 100%; min-height: 44px; }
+      button { min-height: 44px; padding: 8px; }
+      :focus-visible { outline: 3px solid Highlight; outline-offset: 2px; }
+      #session-controls { margin-block: 8px; }
+      #stop-control-group {
+        display: flex;
+        flex: 1 1 320px;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+      #stop-warning {
+        flex: 1 1 16rem;
+        margin: 0;
+        padding: 8px;
+        border-inline-start: 4px solid currentColor;
+        color: #8B1E1E;
+        background: #FCE8E6;
+        line-height: 1.5;
+        overflow-wrap: anywhere;
+      }
+      @media (prefers-color-scheme: dark) {
+        #stop-warning { color: #FFB4AB; background: #3B1010; }
+      }
+      @media (forced-colors: active) {
+        #stop-warning { color: MarkText; background: Mark; border: 1px solid MarkText; }
+      }
+      #empty-state { display: grid; gap: 4px; margin-block: 16px; }
+      #empty-state h2 { margin: 0; font-size: 16px; font-weight: 400; line-height: 1.5; }
+      #empty-state p { margin: 0; font-size: 16px; line-height: 1.5; overflow-wrap: anywhere; }
+      #status {
+        min-height: 24px;
+        margin-block: 8px;
+        padding: 8px;
+        color: ButtonText;
+        background: ButtonFace;
+        line-height: 1.5;
+        overflow-wrap: anywhere;
+      }
+      #status:empty { display: none; }
+      #instructions { margin-block: 16px 8px; font-size: 16px; line-height: 1.5; overflow-wrap: anywhere; }
+      canvas { display: block; width: 100%; max-width: 640px; height: auto; image-rendering: pixelated; }
+      canvas:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }
+    </style>
+  </head>
+  <body data-complete="false" data-ready="false" data-result="pending">
+    <main>
+      <h1>Atari 7800 session</h1>
+      <div id="file-controls">
+        <label for="content-file">Choose a local .a78 file</label>
+        <input id="content-file" type="file" accept=".a78">
+        <button id="start-session" type="button" disabled>Start session</button>
+      </div>
+      <div id="session-controls" role="group" aria-label="Session controls">
+        <button id="pause-session" type="button" disabled>Pause session</button>
+        <div id="stop-control-group">
+          <button id="stop-session" type="button" disabled>Stop session</button>
+          <p id="stop-warning" hidden>Stopping discards in-memory battery changes for this session.</p>
+        </div>
+      </div>
+      <section id="empty-state" aria-labelledby="empty-state-heading">
+        <h2 id="empty-state-heading">No game loaded</h2>
+        <p id="empty-state-copy">Choose a local .a78 file to begin. The host uses it for this session only; it does not upload or save the file or battery media.</p>
+      </section>
+      <p id="status" role="status" aria-live="polite" aria-atomic="true"></p>
+      <p id="instructions">Focus the playfield, then use Arrow keys to move and Space for Button 1.</p>
+      <canvas id="playfield" width="320" height="242" tabindex="0"
+        aria-label="Atari 7800 playfield" aria-describedby="instructions">Canvas output is unavailable in this browser.</canvas>
+      <pre id="result" hidden aria-hidden="true"></pre>
+    </main>
+    <script>
+      (() => {
+        const results = Object.create(null);
+        const failures = [];
+        const publish = () => {
+          window.__libfuturoPageResults = { results, failures };
+          document.querySelector("#result").textContent = JSON.stringify({ results, failures });
+          if (results.positive && results.mismatch) {
+            document.body.dataset.complete = "true";
+            document.body.dataset.result = failures.length === 0 ? "pass" : "fail";
+          }
+        };
+        window.addEventListener("error", () => {
+          failures.push({ kind: "error" });
+          document.body.dataset.result = "fail";
+          publish();
+        });
+        window.addEventListener("unhandledrejection", () => {
+          failures.push({ kind: "rejection" });
+          document.body.dataset.result = "fail";
+          publish();
+        });
+        window.Module = {
+          print(line) {
+            if (typeof line !== "string" || !line.startsWith("LFWEB_RESULT ")) return;
+            try {
+              const result = JSON.parse(line.slice("LFWEB_RESULT ".length));
+              if (result && (result.scenario === "positive" || result.scenario === "mismatch")) {
+                if (results[result.scenario]) {
+                  failures.push({ kind: "duplicate-result" });
+                } else {
+                  results[result.scenario] = result;
+                }
+                publish();
+              }
+            } catch {
+              failures.push({ kind: "invalid-result" });
+              document.body.dataset.result = "fail";
+              publish();
+            }
+          },
+          printErr() {
+            failures.push({ kind: "stderr" });
+            document.body.dataset.result = "fail";
+            publish();
+          },
+          onRuntimeInitialized() {
+            try {
+              window.LibFuturoHost.initialize();
+              document.body.dataset.ready = "true";
+            } catch {
+              failures.push({ kind: "host-initialize" });
+              document.body.dataset.result = "fail";
+              publish();
+            }
+          }
+        };
+      })();
+    </script>
+    <script src="/consumer-host.js"></script>
+    <script src="/consumer.js"></script>
+  </body>
+</html>

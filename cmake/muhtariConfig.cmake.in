@@ -1,0 +1,14 @@
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/muhtariTargets.cmake")
+if(NOT TARGET muhtari::muhtari)
+  set(muhtari_FOUND FALSE)
+  set(muhtari_NOT_FOUND_MESSAGE
+    "The installed Muhtari package did not provide muhtari::muhtari")
+  return()
+endif()
+set(muhtari_API_REVISION "@LIBFUTURO_MUHTARI_PACKAGE_API_REVISION@")
+set(muhtari_VERSION "@LIBFUTURO_MUHTARI_PACKAGE_VERSION@")
+set(muhtari_SOURCE_REVISION
+  "@LIBFUTURO_MUHTARI_PACKAGE_SOURCE_REVISION@")
+check_required_components(muhtari)

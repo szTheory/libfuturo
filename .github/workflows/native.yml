@@ -1,7 +1,12 @@
 name: Native validation
 
 on:
+  pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
+  merge_group:
+    types: [checks_requested]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -10,7 +15,6 @@ concurrency:
 jobs:
   native:
     name: macOS arm64 native checks
-    if: ${{ vars.LIBFUTURO_CI_ACTIVATED == 'true' }}
     runs-on: macos-15
     timeout-minutes: 20
     permissions:
