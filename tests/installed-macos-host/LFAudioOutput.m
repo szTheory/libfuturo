@@ -5,7 +5,6 @@
 
 #include <math.h>
 #include <sched.h>
-#include <string.h>
 #include <time.h>
 
 static NSString *const LFAudioOutputErrorDomain =
@@ -45,7 +44,7 @@ static uint64_t lf_audio_monotonic_nanoseconds(void) {
   AVAudioEngine *_engine;
   AVAudioPlayerNode *_player;
   AVAudioFormat *_sourceFormat;
-  AVAudioFormat *_manualRenderingFormat;
+  AVAudioFormat *_engineFormat;
   NSMutableArray<AVAudioPCMBuffer *> *_buffers;
   LFAudioOutputCallbackState *_callbackState;
   LFAudioLockFreeCheckOverride _lockFreeCheckOverride;
@@ -95,20 +94,16 @@ static uint64_t lf_audio_monotonic_nanoseconds(void) {
     _constructionError = lf_audio_error();
     return self;
   }
-  if (_manualRendering) {
-    // Keep the core-facing PCM format as S16 while rendering through the
-    // Float32 format used by the offline AVAudioEngine graph.
-    _manualRenderingFormat = [[AVAudioFormat alloc]
-        initWithCommonFormat:AVAudioPCMFormatFloat32
-                 sampleRate:LFAudioOutputSampleRate
-                   channels:1U
-                interleaved:NO];
-    if (_manualRenderingFormat == nil) {
-      _constructionError = lf_audio_error();
-      return self;
-    }
-  } else {
-    _manualRenderingFormat = _sourceFormat;
+  // AVAudioEngine's player-to-mixer graph uses Float32 PCM in both live and
+  // offline modes. Keep S16 at the core boundary and convert before scheduling.
+  _engineFormat = [[AVAudioFormat alloc]
+      initWithCommonFormat:AVAudioPCMFormatFloat32
+               sampleRate:LFAudioOutputSampleRate
+                 channels:1U
+              interleaved:NO];
+  if (_engineFormat == nil) {
+    _constructionError = lf_audio_error();
+    return self;
   }
   _engine = [[AVAudioEngine alloc] init];
   _player = [[AVAudioPlayerNode alloc] init];
@@ -122,7 +117,7 @@ static uint64_t lf_audio_monotonic_nanoseconds(void) {
   [_engine attachNode:_player];
   if (_manualRendering &&
       ![_engine enableManualRenderingMode:AVAudioEngineManualRenderingModeOffline
-                                   format:_manualRenderingFormat
+                                   format:_engineFormat
                         maximumFrameCount:
                             (AVAudioFrameCount)LF_AUDIO_BUFFER_POOL_MAX_FRAMES
                                      error:nil]) {
@@ -131,17 +126,13 @@ static uint64_t lf_audio_monotonic_nanoseconds(void) {
   }
   [_engine connect:_player
                 to:_engine.mainMixerNode
-            format:_manualRenderingFormat];
+            format:_engineFormat];
   for (NSUInteger index = 0U; index < LF_AUDIO_BUFFER_POOL_CAPACITY; ++index) {
     AVAudioPCMBuffer *buffer = [[AVAudioPCMBuffer alloc]
-        initWithPCMFormat:_manualRenderingFormat
+        initWithPCMFormat:_engineFormat
              frameCapacity:(AVAudioFrameCount)LF_AUDIO_BUFFER_POOL_MAX_FRAMES];
-    if (buffer == nil ||
-        (_manualRendering
-             ? buffer.floatChannelData == NULL ||
-                   buffer.floatChannelData[0] == NULL
-             : buffer.int16ChannelData == NULL ||
-                   buffer.int16ChannelData[0] == NULL)) {
+    if (buffer == nil || buffer.floatChannelData == NULL ||
+        buffer.floatChannelData[0] == NULL) {
       _constructionError = lf_audio_error();
       return self;
     }
@@ -290,14 +281,9 @@ static uint64_t lf_audio_monotonic_nanoseconds(void) {
   }
 
   AVAudioPCMBuffer *buffer = _buffers[token.slot];
-  if (_manualRendering) {
-    float *output = buffer.floatChannelData[0];
-    for (size_t index = 0U; index < sampleCount; ++index) {
-      output[index] = (float)samples[index] / 32768.0F;
-    }
-  } else {
-    memcpy(buffer.int16ChannelData[0], samples,
-           sampleCount * sizeof(*samples));
+  float *output = buffer.floatChannelData[0];
+  for (size_t index = 0U; index < sampleCount; ++index) {
+    output[index] = (float)samples[index] / 32768.0F;
   }
   buffer.frameLength = (AVAudioFrameCount)sampleCount;
 
@@ -475,8 +461,8 @@ static uint64_t lf_audio_monotonic_nanoseconds(void) {
   return _sourceFormat;
 }
 
-- (AVAudioFormat *)manualRenderingFormat {
-  return _manualRenderingFormat;
+- (AVAudioFormat *)engineFormat {
+  return _engineFormat;
 }
 
 - (BOOL)playerStoppedPostconditionForIsPlaying:(BOOL)isPlaying {

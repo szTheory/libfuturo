@@ -242,7 +242,7 @@ static BOOL run_manual_render_checks(void) {
       requirePlaybackEvidence:NO
       lockFreeCheckOverride:nil];
   AVAudioFormat *sourceFormat = output.sourceFormat;
-  AVAudioFormat *renderFormat = output.manualRenderingFormat;
+  AVAudioFormat *renderFormat = output.engineFormat;
   if (output == nil || sourceFormat == nil || renderFormat == nil ||
       sourceFormat.commonFormat != AVAudioPCMFormatInt16 ||
       sourceFormat.channelCount != 1U || sourceFormat.sampleRate != 48000.0 ||
@@ -356,7 +356,7 @@ static BOOL run_manual_mute_checks(NSUInteger *transitionBlocksObserved) {
       initWithManualRendering:YES
       requirePlaybackEvidence:NO
       lockFreeCheckOverride:nil];
-  AVAudioFormat *format = output.manualRenderingFormat;
+  AVAudioFormat *format = output.engineFormat;
   if (output == nil || output.sourceFormat == nil || format == nil ||
       format.commonFormat != AVAudioPCMFormatFloat32 ||
       format.channelCount != 1U || format.sampleRate != 48000.0 ||
@@ -465,6 +465,27 @@ static BOOL run_manual_mute_checks(NSUInteger *transitionBlocksObserved) {
   return YES;
 }
 
+static BOOL run_live_graph_format_checks(void) {
+  LFAudioOutput *output = [[LFAudioOutput alloc]
+      initWithManualRendering:NO
+      requirePlaybackEvidence:NO
+      lockFreeCheckOverride:nil];
+  AVAudioFormat *sourceFormat = output.sourceFormat;
+  AVAudioFormat *engineFormat = output.engineFormat;
+  if (output == nil || sourceFormat == nil || engineFormat == nil ||
+      sourceFormat.commonFormat != AVAudioPCMFormatInt16 ||
+      sourceFormat.channelCount != 1U || sourceFormat.sampleRate != 48000.0 ||
+      !sourceFormat.isInterleaved ||
+      engineFormat.commonFormat != AVAudioPCMFormatFloat32 ||
+      engineFormat.channelCount != 1U || engineFormat.sampleRate != 48000.0 ||
+      engineFormat.isInterleaved || ![output stop] ||
+      !output.evidence.playerStopped || !output.evidence.engineStopped ||
+      !output.evidence.callbacksQuiescent) {
+    return manual_fail("live graph format and construction");
+  }
+  return YES;
+}
+
 int main(void) {
   @autoreleasepool {
     if (!run_pool_checks()) {
@@ -473,6 +494,9 @@ int main(void) {
     if (!run_manual_render_checks()) {
       return fail("manual rendering, lock-free gate or callback controls");
     }
+    if (!run_live_graph_format_checks()) {
+      return fail("live graph construction or shutdown");
+    }
     NSUInteger transitionBlocksObserved = 0U;
     if (!run_manual_mute_checks(&transitionBlocksObserved)) {
       return fail("manual mute silence, restore, retirement or stop");
@@ -480,7 +504,7 @@ int main(void) {
     (void)printf(
         "host_audio: pool=capacity5 frames=54,800,801 bounds=checked "
         "drop=newest tokens=duplicate,stale rejected retirement=concurrent "
-        "lock-free=10/10 manual=s16-input,float32-render-mono-48000 "
+        "lock-free=10/10 graph=s16-core-input,float32-mono-48000 "
         "blocks=54,800,801 order=pass "
         "mute-output=silent,restored-source "
         "restore-transition=bounded,stable-after=%lu-of-3-blocks "
