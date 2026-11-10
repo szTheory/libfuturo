@@ -669,6 +669,9 @@ static LFProductionViewResult lf_compare_production_geometry(
 }
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
   (void)notification;
+  if (self.testProductionView) {
+    lf_append_test_progress(@"app-start: did-finish-launching\n");
+  }
   [self startHost];
 }
 - (void)blockGuestCallForDrainTest {
@@ -1091,6 +1094,9 @@ static LFProductionViewResult lf_compare_production_geometry(
     return;
   }
   _didStart = YES;
+  if (self.testProductionView) {
+    lf_append_test_progress(@"app-start: host-initialization=begin\n");
+  }
   if (self.testDrainMode != LFHostTestDrainModeNone) {
     _testDrainRelease = dispatch_semaphore_create(0);
   }
@@ -2906,8 +2912,36 @@ static void lf_append_test_progress(NSString *line) {
   (void)close(descriptor);
 }
 
+static void lf_configure_early_test_progress(int argc,
+                                             const char *argv[]) {
+  BOOL isProductionViewSmoke = NO;
+  for (int index = 1; index < argc; ++index) {
+    if (strcmp(argv[index], "--test-production-view") == 0) {
+      isProductionViewSmoke = YES;
+      break;
+    }
+  }
+  if (!isProductionViewSmoke) {
+    return;
+  }
+
+  for (int index = 1; index + 1 < argc; ++index) {
+    if (strcmp(argv[index], "--test-result-file") != 0) {
+      continue;
+    }
+    NSString *resultPath = [NSString stringWithUTF8String:argv[index + 1]];
+    if (resultPath != nil && resultPath.length > 0U) {
+      lf_test_progress_path =
+          [resultPath stringByAppendingString:@".progress"];
+      lf_append_test_progress(@"app-start: main-entered\n");
+    }
+    return;
+  }
+}
+
 int main(int argc, const char *argv[]) {
   @autoreleasepool {
+    lf_configure_early_test_progress(argc, argv);
     NSString *contentPath = nil;
     NSArray<NSString *> *testFailurePaths = nil;
     NSString *testRetryPath = nil;
@@ -2923,6 +2957,8 @@ int main(int argc, const char *argv[]) {
                             &testCliRetry, &testSchedulerRetry, &testDrainMode,
                             &closeAfterPresentations, &testResultPath,
                             &testProductionView)) {
+      lf_append_test_progress([NSString
+          stringWithFormat:@"app-start: arguments=rejected argc=%d\n", argc]);
       (void)fprintf(stderr,
                     "usage: installed_macos_host [--content <file>] [--test-close-after-presentations count --test-result-file path [--test-production-view]] [--test-panel-flow --test-panel-failure path... --test-retry path] [--content invalid --test-cli-retry path] [--content path --test-scheduler-retry path --test-close-after-presentations count --test-result-file path] [--test-drain-close|--test-drain-quit|--test-drain-close-error --content path --test-result-file path]\n");
       return EXIT_FAILURE;
@@ -2936,17 +2972,35 @@ int main(int argc, const char *argv[]) {
     if ((testPanelFlow || testCliRetry || testSchedulerRetry ||
          testProductionView || testDrainMode != LFHostTestDrainModeNone) &&
         testResultPath != nil) {
-      lf_test_progress_path = [testResultPath stringByAppendingString:@".progress"];
+      lf_test_progress_path =
+          [testResultPath stringByAppendingString:@".progress"];
+    }
+    if (testProductionView) {
+      lf_append_test_progress(@"app-start: arguments=accepted mode=production-view\n");
     }
     lf_test_drain_mode = testDrainMode;
+    if (testProductionView) {
+      lf_append_test_progress(@"app-start: appkit-load=begin\n");
+    }
     if (!NSApplicationLoad()) {
-      (void)fprintf(stderr, "The native application environment is unavailable.\n");
+      if (testProductionView) {
+        lf_append_test_progress(@"app-start: appkit-load=failed\n");
+      }
+      (void)fprintf(stderr,
+                    "The native application environment is unavailable.\n");
       return EXIT_FAILURE;
     }
     NSApplication *application = NSApp;
     if (application == nil) {
-      (void)fprintf(stderr, "The native application environment is unavailable.\n");
+      if (testProductionView) {
+        lf_append_test_progress(@"app-start: appkit-instance=missing\n");
+      }
+      (void)fprintf(stderr,
+                    "The native application environment is unavailable.\n");
       return EXIT_FAILURE;
+    }
+    if (testProductionView) {
+      lf_append_test_progress(@"app-start: appkit-load=passed\n");
     }
     LFHostApplicationDelegate *delegate =
         [[LFHostApplicationDelegate alloc] init];

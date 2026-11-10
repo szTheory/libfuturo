@@ -25,6 +25,9 @@ RESULT_FILE=$SCRATCH/result.txt
 PROGRESS_FILE=$RESULT_FILE.progress
 SUPERVISOR_CONTROL=$SCRATCH/supervisor-control
 SUPERVISOR_STATUS=$SCRATCH/supervisor-status
+# Keep a harness marker so early app exits are distinguishable from a
+# supervisor-only launch failure in hosted runner logs.
+printf 'native-smoke: app-launch-requested\n' > "$PROGRESS_FILE"
 SUPERVISOR_PID=
 SUPERVISOR_SEQUENCE=0
 test_app_is_running() {
