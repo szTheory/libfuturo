@@ -1,36 +1,65 @@
 # libfuturo
 
 libfuturo is an experimental C interface for integrating console emulator cores
-with hosts. Its current source-tree proof runs a public C host against the
-deterministic `synthetic-v1` development profile. This profile is a conformance
-fixture; it does not emulate console hardware or qualify a real core.
+with hosts. Its public C examples cover the deterministic `synthetic-v1`
+profile and two pinned real-core profiles: Nesturbator for NES and the optional
+`muhtari-ntsc-v1` Atari 7800 joystick session. The synthetic profile is a
+conformance fixture; it does not emulate console hardware or qualify hardware
+accuracy. Muhtari remains disabled in the base SDK unless a consumer opts in.
 
 ## Try the local consumer
 
-From the repository root, run [`./scripts/check.sh`](scripts/check.sh). The
-script configures and builds the selected macOS arm64 profile, then executes
-the required CTest suite. See [developer instructions](docs/development.md) for
-prerequisites, output locations, each test's purpose, and the evidence limits.
+From the repository root, run [`./scripts/check.sh`](scripts/check.sh). It
+configures and builds the selected local macOS arm64 profile, then executes the
+required CTest suite, including installed real-core sessions, package-boundary
+checks, and failure controls.
+See [developer instructions](docs/development.md) for prerequisites, output
+locations, required modes, and evidence limits.
 
-The C example is [`examples/synthetic/main.c`](examples/synthetic/main.c). It
-uses the public SDK header at [`include/libfuturo/libfuturo.h`](include/libfuturo/libfuturo.h).
-The profile rules, formats, ownership, errors, and literal session are in
+To qualify the separate browser package and host, run
+[`./scripts/check-browser-package.sh`](scripts/check-browser-package.sh) from a
+clean checkout. The exact prerequisites, seven scenarios, report location and
+limits are in the [browser-host guide](docs/browser-host.md).
+
+The C examples are [`examples/synthetic/main.c`](examples/synthetic/main.c)
+and [`examples/muhtari/main.c`](examples/muhtari/main.c). They use the public SDK header at
+[`include/libfuturo/libfuturo.h`](include/libfuturo/libfuturo.h). The synthetic
+profile rules, formats, ownership, errors, and literal session are in
 [`docs/synthetic-profile.md`](docs/synthetic-profile.md).
 
 ## Compatibility and evidence
 
 The API is experimental. Source declarations may change; no stable binary or
 plugin ABI is promised. `synthetic-v1` defines its own behavior and in-memory
-media identity. That does not establish behavior compatibility with real
-cores, durable save formats, or machine snapshot compatibility. Snapshots are
-unsupported. See the profile and developer guide for the exact tested scope.
+media identity; it does not establish compatibility with real cores, durable
+save formats, or machine snapshots.
 
-The separate [nesturbator seam map](docs/nesturbator-seams.md) records source
-observations and the bounded create/destroy probe. That probe does not exercise
-cartridge loading, frames, audio/video, durable saves, or restore. The installed
-and relocated consumer journey remains Phase 4 work.
+The selected real-core profiles, limits, and measured public-consumer behavior
+are in [`docs/nesturbator-profile.md`](docs/nesturbator-profile.md) and
+[`docs/muhtari-profile.md`](docs/muhtari-profile.md). The shared experimental
+source contract is in [`docs/contract.md`](docs/contract.md). The
+[`seam and fixture provenance record`](docs/nesturbator-seams.md) names the
+exact source pin and project-authored generated-cartridge recipe. The real
+consumer loads that NROM, samples input, advances complete frames, and checks
+literal RGB24 and silent PCM output through the public C boundary. Its failure
+modes test refused loads, bounded output, and the terminal JAM state.
 
-The GitHub Actions workflow is manual-only and gated by a repository variable.
-Its first approved public `macos-15` run passed on the published source
-candidate. See [CI activation](docs/ci-activation.md) for the exact source SHA,
-runner identity, test results, and cost policy.
+The Muhtari consumer loads a project-authored diagnostic, checks the two
+joystick ports, partial startup progress, steady cadence, raw INDEX8 output and
+PCM, and verifies refused-load continuation and selected bounds. The public
+[`muhtari_host` example](examples/muhtari/main.c) uses the same declared profile
+metadata and host-owned buffers. It does not apply a palette or claim battery
+recovery.
+
+The local route also verifies game-save restoration across fresh processes,
+recovery from a controlled pre-rename write failure, and the same journey from
+a relocated SDK/core installation. This does not establish OS-crash or
+power-loss durability. The Muhtari base-package check also proves that a
+default-off installed consumer needs no Muhtari artifacts or link dependency.
+No other target or hardware accuracy is qualified.
+
+The native and Linux browser GitHub Actions workflows are configured for pull
+requests, pushes to `main`, manual dispatch, and merge-queue checks. See
+[CI activation](docs/ci-activation.md) for workflow details and the recorded
+hosted results. A local pass or workflow definition alone does not establish a
+hosted pass or required branch protection.

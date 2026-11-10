@@ -18,7 +18,7 @@ static int check_capability(const char *name, lf_capability capability,
                             uint32_t expected_supported) {
   uint32_t supported = UINT32_MAX;
   const lf_status status =
-      lf_get_capability("synthetic-v1", capability, &supported);
+      lf_get_capability("synthetic-v1", NULL, capability, &supported);
   if (status != expected_status || supported != expected_supported) {
     (void)fprintf(stderr,
                   "synthetic_session: capability %s expected status=%d supported=%u, "
@@ -51,7 +51,7 @@ int main(int argc, char **argv) {
     return 2;
   }
 
-  REQUIRE(lf_get_profile("synthetic-v1", &profile) == LF_OK,
+  REQUIRE(lf_get_profile("synthetic-v1", NULL, &profile) == LF_OK,
           "synthetic-v1 profile query");
   REQUIRE(profile.struct_size == sizeof(profile), "profile record size");
   REQUIRE(profile.profile_id != NULL && strcmp(profile.profile_id, "synthetic-v1") == 0,

@@ -41,7 +41,9 @@ typedef enum rejected_advance_case {
   REJECT_ZERO_VIDEO_CAPACITY,
   REJECT_SHORT_VIDEO_CAPACITY,
   REJECT_ZERO_AUDIO_CAPACITY,
-  REJECT_SHORT_AUDIO_CAPACITY
+  REJECT_SHORT_AUDIO_CAPACITY,
+  REJECT_SHORT_PADDED_VIDEO_CAPACITY,
+  REJECT_FOUR_WORK_ONE_STEP_AUDIO
 } rejected_advance_case;
 
 static void *tracked_allocate(void *context, size_t bytes) {
@@ -331,6 +333,271 @@ static int test_sequential_instance_independence(void) {
   return 1;
 }
 
+static int test_capability_and_synthetic_load_boundaries(void) {
+  lf_instance *subject = NULL;
+  lf_instance *reference = NULL;
+  lf_input input = {.struct_size = sizeof(input), .buttons = 3U};
+  const uint8_t content[1] = {0x5AU};
+  lf_load_request request = {
+      .struct_size = sizeof(request),
+      .content_data = content,
+      .content_size_bytes = sizeof(content),
+      .configuration_id = NULL,
+  };
+  lf_load_result result = {.struct_size = sizeof(result)};
+  uint32_t supported = UINT32_MAX;
+  int succeeded = 0;
+
+  CHECK_GOTO(lf_get_capability("synthetic-v1", NULL,
+                               LF_CAP_LOGICAL_INPUT, &supported) == LF_OK &&
+                 supported == 1U,
+             "supported capability is reported independently");
+  CHECK_GOTO(lf_get_capability("synthetic-v1", NULL,
+                               LF_CAP_CONCURRENT_USE, &supported) ==
+                     LF_UNSUPPORTED &&
+                 supported == 0U,
+             "concurrent calls are explicitly unsupported");
+  CHECK_GOTO(lf_get_capability("synthetic-v1", NULL,
+                               (lf_capability)999, &supported) ==
+                     LF_INVALID_ARGUMENT &&
+                 supported == 0U,
+             "unknown capability differs from a known unavailable one");
+
+  CHECK_GOTO(lf_create("synthetic-v1", NULL, &subject) == LF_OK,
+             "synthetic load subject created");
+  CHECK_GOTO(lf_create("synthetic-v1", NULL, &reference) == LF_OK,
+             "synthetic load reference created");
+  CHECK_GOTO(advance_seed(subject) && advance_seed(reference) &&
+                 lf_set_input(subject, &input) == LF_OK &&
+                 lf_set_input(reference, &input) == LF_OK,
+             "synthetic load histories and pending input match");
+
+  memset(&result, 0xA5, sizeof(result));
+  result.struct_size = sizeof(result);
+  CHECK_GOTO(lf_load(subject, &request, &result) == LF_UNSUPPORTED &&
+                 result.struct_size == sizeof(result) && result.loaded == 0U &&
+                 result.content_size_bytes == 0U &&
+                 result.effective_configuration_id == NULL,
+             "valid synthetic load request reports unsupported without effects");
+
+  memset(&result, 0xA5, sizeof(result));
+  result.struct_size = sizeof(result);
+  CHECK_GOTO(lf_load(subject, NULL, &result) == LF_INVALID_ARGUMENT &&
+                 result.struct_size == sizeof(result) && result.loaded == 0U &&
+                 result.content_size_bytes == 0U &&
+                 result.effective_configuration_id == NULL,
+             "missing load request differs from unsupported profile operation");
+
+  request.content_data = NULL;
+  memset(&result, 0xA5, sizeof(result));
+  result.struct_size = sizeof(result);
+  CHECK_GOTO(lf_load(subject, &request, &result) == LF_INVALID_ARGUMENT &&
+                 result.struct_size == sizeof(result) && result.loaded == 0U &&
+                 result.content_size_bytes == 0U &&
+                 result.effective_configuration_id == NULL,
+             "missing content pointer is rejected before unsupported operation");
+
+  request.content_data = content;
+  request.content_size_bytes = 0U;
+  memset(&result, 0xA5, sizeof(result));
+  result.struct_size = sizeof(result);
+  CHECK_GOTO(lf_load(subject, &request, &result) == LF_INVALID_ARGUMENT &&
+                 result.struct_size == sizeof(result) && result.loaded == 0U &&
+                 result.content_size_bytes == 0U &&
+                 result.effective_configuration_id == NULL,
+             "empty content span is rejected before unsupported operation");
+
+  request.content_size_bytes = sizeof(content);
+  request.struct_size -= 1U;
+  memset(&result, 0xA5, sizeof(result));
+  result.struct_size = sizeof(result);
+  CHECK_GOTO(lf_load(subject, &request, &result) == LF_INVALID_ARGUMENT &&
+                 result.struct_size == sizeof(result) && result.loaded == 0U &&
+                 result.content_size_bytes == 0U &&
+                 result.effective_configuration_id == NULL,
+             "malformed load record is rejected before unsupported operation");
+  CHECK_GOTO(content[0] == 0x5AU && compare_followup(subject, reference),
+             "unsupported and invalid load requests preserve pending input and history");
+  succeeded = 1;
+
+cleanup:
+  if (subject != NULL) {
+    (void)lf_destroy(&subject);
+  }
+  if (reference != NULL) {
+    (void)lf_destroy(&reference);
+  }
+  return succeeded;
+}
+
+static int test_synthetic_media_import_timing(void) {
+  lf_instance *subject = NULL;
+  lf_instance *reference = NULL;
+  const uint8_t content[] = {'L', 'F', 'T', '1'};
+  const uint8_t saved_media[4] = {'S', 'A', 'V', 'E'};
+  const uint8_t default_media[4] = {76U, 70U, 0U, 0U};
+  const uint8_t advanced_media[4] = {76U, 70U, 1U, 1U};
+  uint8_t actual_media[4] = {0U};
+  lf_media_info actual_info = {.struct_size = sizeof(actual_info)};
+  lf_load_request request = {
+      .struct_size = sizeof(request),
+      .content_data = content,
+      .content_size_bytes = sizeof(content),
+      .configuration_id = NULL,
+  };
+  lf_load_result load_result = {.struct_size = sizeof(load_result)};
+  lf_input pending = {.struct_size = sizeof(pending), .buttons = 3U};
+  int succeeded = 0;
+
+  CHECK_GOTO(lf_create("synthetic-v1", NULL, &subject) == LF_OK &&
+                 lf_create("synthetic-v1", NULL, &reference) == LF_OK,
+             "synthetic import instances created");
+  CHECK_GOTO(lf_load(subject, &request, &load_result) == LF_OK &&
+                 load_result.loaded == 1U &&
+                 load_result.content_size_bytes == sizeof(content) &&
+                 load_result.effective_configuration_id != NULL &&
+                 strcmp(load_result.effective_configuration_id,
+                        "synthetic-default") == 0,
+             "one owned synthetic test content loads successfully");
+  CHECK_GOTO(copy_media(subject, actual_media, &actual_info) &&
+                 media_is(actual_media, &actual_info, default_media, 0U),
+             "successful load resets synthetic media and guest generation");
+  load_result = (lf_load_result){.struct_size = sizeof(load_result)};
+  CHECK_GOTO(lf_load(reference, &request, &load_result) == LF_OK &&
+                 load_result.loaded == 1U,
+             "reference instance loads the same test content");
+
+  CHECK_GOTO(lf_import_media(subject, "synthetic-media-v1", saved_media,
+                             sizeof(saved_media)) == LF_OK &&
+                 copy_media(subject, actual_media, &actual_info) &&
+                 media_is(actual_media, &actual_info, saved_media, 0U),
+             "valid pre-advance import preserves guest generation");
+  CHECK_GOTO(lf_import_media(subject, "synthetic-media-v1", saved_media,
+                             sizeof(saved_media)) == LF_OK &&
+                 copy_media(subject, actual_media, &actual_info) &&
+                 media_is(actual_media, &actual_info, saved_media, 0U),
+             "repeating the same import is idempotent");
+  CHECK_GOTO(lf_import_media(subject, "synthetic-media-v1", NULL,
+                             sizeof(saved_media)) == LF_INVALID_ARGUMENT &&
+                 copy_media(subject, actual_media, &actual_info) &&
+                 media_is(actual_media, &actual_info, saved_media, 0U),
+             "malformed null media source is rejected unchanged");
+  CHECK_GOTO(lf_import_media(subject, "synthetic-media-v1", saved_media, 0U) ==
+                     LF_INVALID_ARGUMENT &&
+                 copy_media(subject, actual_media, &actual_info) &&
+                 media_is(actual_media, &actual_info, saved_media, 0U),
+             "empty media span is rejected unchanged");
+  CHECK_GOTO(lf_import_media(subject, "synthetic-media-v2", saved_media,
+                             sizeof(saved_media)) == LF_UNSUPPORTED &&
+                 copy_media(subject, actual_media, &actual_info) &&
+                 media_is(actual_media, &actual_info, saved_media, 0U),
+             "wrong media identity is rejected unchanged");
+  CHECK_GOTO(lf_import_media(subject, "synthetic-media-v1", saved_media,
+                             sizeof(saved_media) - 1U) == LF_INVALID_ARGUMENT &&
+                 copy_media(subject, actual_media, &actual_info) &&
+                 media_is(actual_media, &actual_info, saved_media, 0U),
+             "short media extent is rejected unchanged");
+  {
+    const uint8_t oversized_media[5] = {'S', 'A', 'V', 'E', '!'};
+    CHECK_GOTO(lf_import_media(subject, "synthetic-media-v1", oversized_media,
+                               sizeof(oversized_media)) == LF_INVALID_ARGUMENT &&
+                   copy_media(subject, actual_media, &actual_info) &&
+                   media_is(actual_media, &actual_info, saved_media, 0U),
+               "long media extent is rejected unchanged");
+  }
+
+  CHECK_GOTO(lf_import_media(reference, "synthetic-media-v1", saved_media,
+                             sizeof(saved_media)) == LF_OK &&
+                 advance_seed(subject) && advance_seed(reference) &&
+                 lf_set_input(subject, &pending) == LF_OK &&
+                 lf_set_input(reference, &pending) == LF_OK,
+             "matching sessions advance after compatible imports");
+  CHECK_GOTO(lf_import_media(subject, "synthetic-media-v1", saved_media,
+                             sizeof(saved_media)) == LF_INVALID_ARGUMENT &&
+                 copy_media(subject, actual_media, &actual_info) &&
+                 media_is(actual_media, &actual_info, advanced_media, 1U) &&
+                 compare_followup(subject, reference),
+             "late import is rejected without changing media or history");
+  succeeded = 1;
+
+cleanup:
+  if (subject != NULL) {
+    (void)lf_destroy(&subject);
+  }
+  if (reference != NULL) {
+    (void)lf_destroy(&reference);
+  }
+  return succeeded;
+}
+
+static int run_create_failure_preserves_peer(size_t fail_on_call) {
+  allocation_tracker failed_tracker = {0};
+  allocation_tracker peer_tracker = {0};
+  lf_create_options failed_options = tracked_options(&failed_tracker);
+  lf_create_options peer_options = tracked_options(&peer_tracker);
+  lf_instance *peer = NULL;
+  lf_instance *reference = NULL;
+  lf_instance *failed_output = NULL;
+  int succeeded = 0;
+
+  failed_tracker.fail_on_call = fail_on_call;
+  if (lf_create("synthetic-v1", &peer_options, &peer) != LF_OK ||
+      lf_create("synthetic-v1", NULL, &reference) != LF_OK ||
+      !advance_seed(peer) || !advance_seed(reference)) {
+    (void)fprintf(stderr,
+                  "synthetic_boundaries: allocator peer setup failed at call %zu\n",
+                  fail_on_call);
+    goto cleanup;
+  }
+  {
+    lf_input pending = {.struct_size = sizeof(pending), .buttons = 3U};
+    if (lf_set_input(peer, &pending) != LF_OK ||
+        lf_set_input(reference, &pending) != LF_OK) {
+      (void)fprintf(stderr,
+                    "synthetic_boundaries: allocator peer input failed at call %zu\n",
+                    fail_on_call);
+      goto cleanup;
+    }
+  }
+
+  failed_output = peer;
+  if (lf_create("synthetic-v1", &failed_options, &failed_output) !=
+          LF_RESOURCE_EXHAUSTED ||
+      failed_output != NULL || failed_tracker.calls != fail_on_call ||
+      failed_tracker.live != 0U || failed_tracker.duplicate_frees != 0U ||
+      peer_tracker.live != 2U || !compare_followup(peer, reference)) {
+    (void)fprintf(stderr,
+                  "synthetic_boundaries: create allocation failure %zu affected its peer\n",
+                  fail_on_call);
+    goto cleanup;
+  }
+  succeeded = 1;
+
+cleanup:
+  if (peer != NULL) {
+    (void)lf_destroy(&peer);
+  }
+  if (reference != NULL) {
+    (void)lf_destroy(&reference);
+  }
+  if (peer_tracker.live != 0U || peer_tracker.allocations != peer_tracker.frees ||
+      failed_tracker.live != 0U) {
+    (void)fprintf(stderr,
+                  "synthetic_boundaries: create allocation failure %zu leaked allocations\n",
+                  fail_on_call);
+    succeeded = 0;
+  }
+  return succeeded;
+}
+
+static int test_create_failure_peer_independence(void) {
+  CHECK(run_create_failure_preserves_peer(1U),
+        "first create allocation failure preserves independent session");
+  CHECK(run_create_failure_preserves_peer(2U),
+        "second create allocation failure preserves independent session");
+  return 1;
+}
+
 static int run_advance_rejection_case(rejected_advance_case which,
                                       const char *label,
                                       lf_status expected_status) {
@@ -348,6 +615,7 @@ static int run_advance_rejection_case(rejected_advance_case which,
   lf_media_info after_info = {.struct_size = sizeof(after_info)};
   lf_media_info reference_info = {.struct_size = sizeof(reference_info)};
   lf_status status = LF_OK;
+  uint32_t expected_requested_units = 1U;
   int succeeded = 0;
 
   memset(video, 0xA5, sizeof(video));
@@ -376,19 +644,23 @@ static int run_advance_rejection_case(rejected_advance_case which,
     case REJECT_NULL_REQUEST:
       status = lf_advance(subject, NULL, &result);
       expected_status = LF_INVALID_ARGUMENT;
+      expected_requested_units = 0U;
       break;
     case REJECT_SHORT_REQUEST_RECORD:
       request.struct_size -= 1U;
       status = lf_advance(subject, &request, &result);
+      expected_requested_units = 0U;
       break;
     case REJECT_LARGE_REQUEST_RECORD:
       request.struct_size += 1U;
       status = lf_advance(subject, &request, &result);
+      expected_requested_units = 0U;
       break;
     case REJECT_OVER_LIMIT_WORK:
       request.work_units = 5U;
       request.audio_capacity_samples = 10U;
       status = lf_advance(subject, &request, &result);
+      expected_requested_units = 5U;
       break;
     case REJECT_SHORT_STRIDE:
       request.video_stride_bytes = 1U;
@@ -419,9 +691,24 @@ static int run_advance_rejection_case(rejected_advance_case which,
       status = lf_advance(subject, &request, &result);
       expected_status = LF_BUFFER_TOO_SMALL;
       break;
+    case REJECT_SHORT_PADDED_VIDEO_CAPACITY:
+      request.video_stride_bytes = 3U;
+      request.video_capacity_bytes = 4U;
+      status = lf_advance(subject, &request, &result);
+      expected_status = LF_BUFFER_TOO_SMALL;
+      break;
+    case REJECT_FOUR_WORK_ONE_STEP_AUDIO:
+      request.work_units = 4U;
+      request.video_capacity_bytes = 4U;
+      request.audio_capacity_samples = 2U;
+      status = lf_advance(subject, &request, &result);
+      expected_status = LF_BUFFER_TOO_SMALL;
+      expected_requested_units = 4U;
+      break;
   }
 
-  if (status != expected_status || !result_is_rejected(&result, 1U)) {
+  if (status != expected_status || !result_is_rejected(&result, 1U) ||
+      result.requested_units != expected_requested_units) {
     (void)fprintf(stderr,
                   "synthetic_boundaries: %s returned status=%d and progress=%u\n",
                   label, (int)status, result.actual_units);
@@ -800,12 +1087,12 @@ static int test_other_record_boundaries(void) {
   memset(&profile, 0xB4, sizeof(profile));
   profile.struct_size = sizeof(profile) - 1U;
   memcpy(&profile_before, &profile, sizeof(profile));
-  CHECK(lf_get_profile("synthetic-v1", &profile) == LF_INVALID_ARGUMENT &&
+  CHECK(lf_get_profile("synthetic-v1", NULL, &profile) == LF_INVALID_ARGUMENT &&
             memcmp(&profile, &profile_before, sizeof(profile)) == 0,
         "undersized profile record remains untouched");
   profile.struct_size = sizeof(profile) + 1U;
   memcpy(&profile_before, &profile, sizeof(profile));
-  CHECK(lf_get_profile("synthetic-v1", &profile) == LF_INVALID_ARGUMENT &&
+  CHECK(lf_get_profile("synthetic-v1", NULL, &profile) == LF_INVALID_ARGUMENT &&
             memcmp(&profile, &profile_before, sizeof(profile)) == 0,
         "oversized profile record remains untouched");
 
@@ -890,7 +1177,48 @@ static int test_advance_rejections(void) {
                                    "short audio capacity",
                                    LF_BUFFER_TOO_SMALL),
         "short audio capacity is failure-atomic");
+  CHECK(run_advance_rejection_case(REJECT_SHORT_PADDED_VIDEO_CAPACITY,
+                                   "one-under padded video extent",
+                                   LF_BUFFER_TOO_SMALL),
+        "one-under padded video extent is failure-atomic");
+  CHECK(run_advance_rejection_case(REJECT_FOUR_WORK_ONE_STEP_AUDIO,
+                                   "four work units with one-step audio capacity",
+                                   LF_BUFFER_TOO_SMALL),
+        "bounded audio pressure is failure-atomic");
   return test_result_record_rejection();
+}
+
+static int test_adjacent_output_spans(void) {
+  struct {
+    int16_t audio[2];
+    uint8_t video[4];
+    uint8_t guard[2];
+  } buffers;
+  lf_instance *instance = NULL;
+  lf_run_result result = {.struct_size = sizeof(result)};
+  lf_run_request request = make_request(1U, buffers.video, 4U, 2U,
+                                       buffers.audio, 2U);
+  const uint8_t expected_video[4] = {1U, 1U, 0U, 2U};
+  int passed = 0;
+
+  memset(&buffers, 0x5a, sizeof(buffers));
+  CHECK_GOTO((uint8_t *)buffers.audio + sizeof(buffers.audio) == buffers.video,
+             "output spans are exactly adjacent");
+  CHECK_GOTO(lf_create("synthetic-v1", NULL, &instance) == LF_OK,
+             "adjacent output create");
+  CHECK_GOTO(lf_advance(instance, &request, &result) == LF_OK,
+             "adjacent disjoint output spans are accepted");
+  CHECK_GOTO(result.video_valid && result.audio_valid &&
+                 result.video_extent_bytes == 4U &&
+                 result.audio_produced_samples == 2U &&
+                 buffers.audio[0] == 16 && buffers.audio[1] == -16 &&
+                 memcmp(buffers.video, expected_video, 4U) == 0 &&
+                 buffers.guard[0] == 0x5a && buffers.guard[1] == 0x5a,
+             "adjacent spans retain independent literal audio and video");
+  passed = 1;
+cleanup:
+  (void)lf_destroy(&instance);
+  return passed;
 }
 
 int main(void) {
@@ -900,6 +1228,15 @@ int main(void) {
   if (!test_sequential_instance_independence()) {
     return 1;
   }
+  if (!test_capability_and_synthetic_load_boundaries()) {
+    return 1;
+  }
+  if (!test_synthetic_media_import_timing()) {
+    return 1;
+  }
+  if (!test_create_failure_peer_independence()) {
+    return 1;
+  }
   if (!test_input_rejections()) {
     return 1;
   }
@@ -907,6 +1244,9 @@ int main(void) {
     return 1;
   }
   if (!test_valid_output_boundaries()) {
+    return 1;
+  }
+  if (!test_adjacent_output_spans()) {
     return 1;
   }
   if (!test_work_and_lifetime_boundaries()) {

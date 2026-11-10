@@ -1,0 +1,171 @@
+@PACKAGE_INIT@
+
+function(_libfuturo_validate_colocated_archive target package_cmake_dir
+    archive_target_name out_valid out_message)
+  get_target_property(_is_imported "${target}" IMPORTED)
+  get_target_property(_target_type "${target}" TYPE)
+  if(NOT _is_imported OR NOT _target_type STREQUAL "STATIC_LIBRARY")
+    set("${out_valid}" FALSE PARENT_SCOPE)
+    set("${out_message}"
+      "The existing ${target} target does not resolve to the colocated archive (it is not an imported static library)"
+      PARENT_SCOPE)
+    return()
+  endif()
+
+  # Both core package configs are installed beside their archive under the
+  # same CMAKE_INSTALL_LIBDIR. Resolve the expected artifact from that package
+  # location so relocations and lib/lib64 installs use the same identity check.
+  get_filename_component(_expected_library_dir
+    "${package_cmake_dir}/../.." REALPATH)
+  set(_expected_archive
+    "${_expected_library_dir}/${CMAKE_STATIC_LIBRARY_PREFIX}${archive_target_name}${CMAKE_STATIC_LIBRARY_SUFFIX}")
+  if(NOT EXISTS "${_expected_archive}")
+    set("${out_valid}" FALSE PARENT_SCOPE)
+    set("${out_message}"
+      "The colocated archive for ${target} is missing: ${_expected_archive}"
+      PARENT_SCOPE)
+    return()
+  endif()
+  file(REAL_PATH "${_expected_archive}" _expected_archive_real)
+
+  # Check every declared import configuration, the active consumer
+  # configurations, common CMake configurations, and any explicitly mapped
+  # fallback configurations. Also check generic and NOCONFIG locations.
+  get_target_property(_imported_configurations
+    "${target}" IMPORTED_CONFIGURATIONS)
+  if(NOT _imported_configurations OR
+     _imported_configurations MATCHES "-NOTFOUND$")
+    set(_imported_configurations "")
+  endif()
+  set(_consumer_configurations ${_imported_configurations}
+    ${CMAKE_CONFIGURATION_TYPES} Debug Release RelWithDebInfo MinSizeRel)
+  if(NOT "${CMAKE_BUILD_TYPE}" STREQUAL "")
+    list(APPEND _consumer_configurations "${CMAKE_BUILD_TYPE}")
+  endif()
+  list(REMOVE_DUPLICATES _consumer_configurations)
+
+  set(_location_properties IMPORTED_LOCATION IMPORTED_LOCATION_NOCONFIG)
+  foreach(_configuration IN LISTS _consumer_configurations)
+    string(TOUPPER "${_configuration}" _configuration_upper)
+    list(APPEND _location_properties
+      "IMPORTED_LOCATION_${_configuration_upper}")
+    get_target_property(_mapped_configurations "${target}"
+      "MAP_IMPORTED_CONFIG_${_configuration_upper}")
+    if(_mapped_configurations AND
+       NOT _mapped_configurations MATCHES "-NOTFOUND$")
+      foreach(_mapped_configuration IN LISTS _mapped_configurations)
+        if(NOT "${_mapped_configuration}" STREQUAL "")
+          string(TOUPPER "${_mapped_configuration}" _mapped_configuration_upper)
+          list(APPEND _location_properties
+            "IMPORTED_LOCATION_${_mapped_configuration_upper}")
+        endif()
+      endforeach()
+    endif()
+  endforeach()
+  list(REMOVE_DUPLICATES _location_properties)
+
+  set(_found_location FALSE)
+  foreach(_property IN LISTS _location_properties)
+    get_target_property(_location "${target}" "${_property}")
+    if(_location AND NOT _location MATCHES "-NOTFOUND$")
+      set(_found_location TRUE)
+      if(NOT IS_ABSOLUTE "${_location}" OR NOT EXISTS "${_location}")
+        set("${out_valid}" FALSE PARENT_SCOPE)
+        set("${out_message}"
+          "The existing ${target} target does not resolve to the colocated archive (${_property} is missing or non-absolute: ${_location})"
+          PARENT_SCOPE)
+        return()
+      endif()
+      file(REAL_PATH "${_location}" _location_real)
+      if(NOT "${_location_real}" STREQUAL "${_expected_archive_real}")
+        set("${out_valid}" FALSE PARENT_SCOPE)
+        set("${out_message}"
+          "The existing ${target} target does not resolve to the colocated archive (${_property} resolves to ${_location_real}, expected ${_expected_archive_real})"
+          PARENT_SCOPE)
+        return()
+      endif()
+    endif()
+  endforeach()
+
+  if(NOT _found_location)
+    set("${out_valid}" FALSE PARENT_SCOPE)
+    set("${out_message}"
+      "The existing ${target} target does not resolve to the colocated archive (no imported archive location)"
+      PARENT_SCOPE)
+    return()
+  endif()
+
+  set("${out_valid}" TRUE PARENT_SCOPE)
+  set("${out_message}" "" PARENT_SCOPE)
+endfunction()
+
+set(_libfuturo_nesturbator_cmake_dir
+  "@PACKAGE_LIBFUTURO_NESTURBATOR_CMAKE_DIR@")
+if(NOT EXISTS "${_libfuturo_nesturbator_cmake_dir}/nesturbatorConfig.cmake")
+  set(libfuturo_FOUND FALSE)
+  set(libfuturo_NOT_FOUND_MESSAGE
+    "The colocated Nesturbator package is missing from ${_libfuturo_nesturbator_cmake_dir}")
+  return()
+endif()
+
+# CMake package redirects run before ordinary package search paths, including
+# PATHS and NO_DEFAULT_PATH. Include the colocated config directly so neither a
+# caller-provided nesturbator_DIR nor a redirect can substitute another core.
+set(nesturbator_DIR "${_libfuturo_nesturbator_cmake_dir}")
+set(nesturbator_FOUND TRUE)
+include("${_libfuturo_nesturbator_cmake_dir}/nesturbatorConfig.cmake")
+if(NOT TARGET nesturbator::nesturbator OR NOT nesturbator_FOUND)
+  set(libfuturo_FOUND FALSE)
+  set(libfuturo_NOT_FOUND_MESSAGE
+    "The colocated Nesturbator package did not provide nesturbator::nesturbator")
+  return()
+endif()
+_libfuturo_validate_colocated_archive(nesturbator::nesturbator
+  "${_libfuturo_nesturbator_cmake_dir}" nesturbator
+  _libfuturo_nesturbator_identity_valid _libfuturo_nesturbator_identity_message)
+if(NOT _libfuturo_nesturbator_identity_valid)
+  set(libfuturo_FOUND FALSE)
+  set(libfuturo_NOT_FOUND_MESSAGE
+    "${_libfuturo_nesturbator_identity_message}")
+  return()
+endif()
+unset(_libfuturo_nesturbator_cmake_dir)
+
+set(libfuturo_MUHTARI_ENABLED "@LIBFUTURO_MUHTARI_ENABLED@")
+set(libfuturo_MUHTARI_API_REVISION
+  "@LIBFUTURO_MUHTARI_PACKAGE_API_REVISION@")
+set(libfuturo_MUHTARI_VERSION "@LIBFUTURO_MUHTARI_PACKAGE_VERSION@")
+set(libfuturo_MUHTARI_SOURCE_REVISION
+  "@LIBFUTURO_MUHTARI_PACKAGE_SOURCE_REVISION@")
+if(libfuturo_MUHTARI_ENABLED)
+  set(_libfuturo_muhtari_cmake_dir
+    "@PACKAGE_LIBFUTURO_MUHTARI_CMAKE_DIR@")
+  if(NOT EXISTS "${_libfuturo_muhtari_cmake_dir}/muhtariConfig.cmake")
+    set(libfuturo_FOUND FALSE)
+    set(libfuturo_NOT_FOUND_MESSAGE
+      "The colocated Muhtari package is missing from ${_libfuturo_muhtari_cmake_dir}")
+    return()
+  endif()
+  set(muhtari_DIR "${_libfuturo_muhtari_cmake_dir}")
+  set(muhtari_FOUND TRUE)
+  include("${_libfuturo_muhtari_cmake_dir}/muhtariConfig.cmake")
+  if(NOT TARGET muhtari::muhtari OR NOT muhtari_FOUND)
+    set(libfuturo_FOUND FALSE)
+    set(libfuturo_NOT_FOUND_MESSAGE
+      "The colocated Muhtari package did not provide muhtari::muhtari")
+    return()
+  endif()
+  _libfuturo_validate_colocated_archive(muhtari::muhtari
+    "${_libfuturo_muhtari_cmake_dir}" muhtari
+    _libfuturo_muhtari_identity_valid _libfuturo_muhtari_identity_message)
+  if(NOT _libfuturo_muhtari_identity_valid)
+    set(libfuturo_FOUND FALSE)
+    set(libfuturo_NOT_FOUND_MESSAGE
+      "${_libfuturo_muhtari_identity_message}")
+    return()
+  endif()
+  unset(_libfuturo_muhtari_cmake_dir)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/libfuturoTargets.cmake")
+check_required_components(libfuturo)

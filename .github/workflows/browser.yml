@@ -1,0 +1,24 @@
+name: Browser qualification
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  merge_group:
+    types: [checks_requested]
+
+jobs:
+  browser:
+    name: Linux browser qualification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run canonical browser qualification
+        run: ./scripts/check-browser-package.sh

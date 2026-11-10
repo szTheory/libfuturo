@@ -1,0 +1,149 @@
+@PACKAGE_INIT@
+
+set(libfuturo_web_TARGET "libfuturo::web")
+set(libfuturo_web_CORE "muhtari")
+set(libfuturo_web_CORE_VERSION "@LIBFUTURO_WEB_PACKAGE_VERSION@")
+set(libfuturo_web_CORE_API_REVISION
+  "@LIBFUTURO_WEB_PACKAGE_API_REVISION@")
+set(libfuturo_web_CORE_ABI_REVISION "1")
+set(libfuturo_web_CORE_BEHAVIOR_REVISION "6")
+set(libfuturo_web_CORE_SOURCE_REVISION
+  "@LIBFUTURO_WEB_PACKAGE_SOURCE_REVISION@")
+set(libfuturo_web_SOURCE_REVISION
+  "@LIBFUTURO_WEB_PACKAGE_LIBFUTURO_SOURCE_REVISION@")
+set(libfuturo_web_PROFILE_ID "muhtari-ntsc-v2")
+set(libfuturo_web_CONFIGURATION_ID "muhtari-ntsc-battery-diagnostic")
+set(libfuturo_web_TOOLCHAIN_ID "@LIBFUTURO_WEB_TOOLCHAIN_ID@")
+set(libfuturo_web_BUILD_ID "@LIBFUTURO_WEB_BUILD_ID@")
+set(libfuturo_web_SDK_IMAGE "@LIBFUTURO_WEB_SDK_IMAGE@")
+set(libfuturo_web_SDK_PLATFORM "@LIBFUTURO_WEB_SDK_PLATFORM@")
+
+function(_libfuturo_web_validate_archive target package_cmake_dir archive_name
+    out_valid out_message)
+  get_target_property(_target_imported "${target}" IMPORTED)
+  get_target_property(_target_type "${target}" TYPE)
+  if(NOT _target_imported OR NOT _target_type STREQUAL "STATIC_LIBRARY")
+    set("${out_valid}" FALSE PARENT_SCOPE)
+    set("${out_message}"
+      "${target} is not an imported static archive"
+      PARENT_SCOPE)
+    return()
+  endif()
+
+  get_filename_component(_expected_library_dir
+    "${package_cmake_dir}/../.." REALPATH)
+  set(_expected_archive "${_expected_library_dir}/lib${archive_name}.a")
+  if(NOT EXISTS "${_expected_archive}")
+    set("${out_valid}" FALSE PARENT_SCOPE)
+    set("${out_message}" "The colocated archive is missing: ${_expected_archive}"
+      PARENT_SCOPE)
+    return()
+  endif()
+  file(REAL_PATH "${_expected_archive}" _expected_archive_real)
+
+  set(_location_properties IMPORTED_LOCATION IMPORTED_LOCATION_NOCONFIG
+    IMPORTED_LOCATION_DEBUG IMPORTED_LOCATION_RELEASE
+    IMPORTED_LOCATION_RELWITHDEBINFO IMPORTED_LOCATION_MINSIZEREL)
+  set(_found_location FALSE)
+  foreach(_property IN LISTS _location_properties)
+    get_target_property(_location "${target}" "${_property}")
+    if(_location AND NOT _location MATCHES "-NOTFOUND$")
+      set(_found_location TRUE)
+      if(NOT EXISTS "${_location}")
+        set("${out_valid}" FALSE PARENT_SCOPE)
+        set("${out_message}"
+          "${target} ${_property} is missing: ${_location}"
+          PARENT_SCOPE)
+        return()
+      endif()
+      file(REAL_PATH "${_location}" _location_real)
+      if(NOT _location_real STREQUAL _expected_archive_real)
+        set("${out_valid}" FALSE PARENT_SCOPE)
+        set("${out_message}"
+          "${target} resolves outside its selected package archive: ${_location_real}"
+          PARENT_SCOPE)
+        return()
+      endif()
+    endif()
+  endforeach()
+
+  if(NOT _found_location)
+    set("${out_valid}" FALSE PARENT_SCOPE)
+    set("${out_message}" "${target} has no imported archive location"
+      PARENT_SCOPE)
+    return()
+  endif()
+  set("${out_valid}" TRUE PARENT_SCOPE)
+  set("${out_message}" "" PARENT_SCOPE)
+endfunction()
+
+if(TARGET nesturbator::nesturbator)
+  set(libfuturo_web_FOUND FALSE)
+  set(libfuturo_web_NOT_FOUND_MESSAGE
+    "The browser package must not use a Nesturbator target")
+  return()
+endif()
+
+set(_libfuturo_web_muhtari_cmake_dir
+  "@PACKAGE_LIBFUTURO_WEB_MUHTARI_CMAKE_DIR@")
+if(NOT EXISTS "${_libfuturo_web_muhtari_cmake_dir}/muhtariConfig.cmake")
+  set(libfuturo_web_FOUND FALSE)
+  set(libfuturo_web_NOT_FOUND_MESSAGE
+    "The colocated Muhtari package is missing from ${_libfuturo_web_muhtari_cmake_dir}")
+  return()
+endif()
+
+# Load the colocated core directly so package redirects and unrelated search
+# prefixes cannot replace the core selected by this browser package.
+set(muhtari_DIR "${_libfuturo_web_muhtari_cmake_dir}")
+set(muhtari_FOUND TRUE)
+include("${_libfuturo_web_muhtari_cmake_dir}/muhtariConfig.cmake")
+if(NOT TARGET muhtari::muhtari OR NOT muhtari_FOUND)
+  set(libfuturo_web_FOUND FALSE)
+  set(libfuturo_web_NOT_FOUND_MESSAGE
+    "The colocated Muhtari package did not provide muhtari::muhtari")
+  return()
+endif()
+_libfuturo_web_validate_archive(muhtari::muhtari
+  "${_libfuturo_web_muhtari_cmake_dir}" muhtari
+  _libfuturo_web_muhtari_valid _libfuturo_web_muhtari_message)
+if(NOT _libfuturo_web_muhtari_valid)
+  set(libfuturo_web_FOUND FALSE)
+  set(libfuturo_web_NOT_FOUND_MESSAGE "${_libfuturo_web_muhtari_message}")
+  return()
+endif()
+if(NOT muhtari_API_REVISION STREQUAL libfuturo_web_CORE_API_REVISION OR
+   NOT muhtari_VERSION STREQUAL libfuturo_web_CORE_VERSION OR
+   NOT muhtari_SOURCE_REVISION STREQUAL
+       libfuturo_web_CORE_SOURCE_REVISION)
+  set(libfuturo_web_FOUND FALSE)
+  set(libfuturo_web_NOT_FOUND_MESSAGE
+    "The colocated Muhtari package identity differs from the selected browser core")
+  return()
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/libfuturoWebTargets.cmake")
+if(NOT TARGET libfuturo::web)
+  set(libfuturo_web_FOUND FALSE)
+  set(libfuturo_web_NOT_FOUND_MESSAGE
+    "The installed browser package did not provide libfuturo::web")
+  return()
+endif()
+_libfuturo_web_validate_archive(libfuturo::web
+  "${CMAKE_CURRENT_LIST_DIR}" futuro-web
+  _libfuturo_web_target_valid _libfuturo_web_target_message)
+if(NOT _libfuturo_web_target_valid)
+  set(libfuturo_web_FOUND FALSE)
+  set(libfuturo_web_NOT_FOUND_MESSAGE "${_libfuturo_web_target_message}")
+  return()
+endif()
+get_target_property(_libfuturo_web_links libfuturo::web INTERFACE_LINK_LIBRARIES)
+if(_libfuturo_web_links MATCHES "[Nn]esturbator")
+  set(libfuturo_web_FOUND FALSE)
+  set(libfuturo_web_NOT_FOUND_MESSAGE
+    "The browser target contains a forbidden Nesturbator dependency")
+  return()
+endif()
+
+unset(_libfuturo_web_muhtari_cmake_dir)
+check_required_components(libfuturo_web)

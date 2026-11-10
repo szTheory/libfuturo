@@ -4,6 +4,11 @@
 
 #include <libfuturo/libfuturo.h>
 
+/* Happy-path example for the shared obligations indexed in docs/contract.md:
+   LC-LIFE-01, LC-OWN-01, LC-LOAD-01, LC-INPUT-01, LC-TIME-01, LC-LIMIT-01,
+   LC-ERROR-01, and LC-HOST-01. Profile-specific refusal cases are tested
+   separately. */
+
 static const char *status_name(lf_status status) {
   switch (status) {
     case LF_OK: return "LF_OK";
@@ -20,6 +25,7 @@ static const char *stop_name(lf_stop_reason stop_reason) {
   switch (stop_reason) {
     case LF_STOP_BUDGET_REACHED: return "LF_STOP_BUDGET_REACHED";
     case LF_STOP_REJECTED: return "LF_STOP_REJECTED";
+    case LF_STOP_CORE_HALTED: return "LF_STOP_CORE_HALTED";
   }
   return "unknown stop reason";
 }
@@ -33,7 +39,8 @@ static int require_capability(const char *name, const char *profile_id,
                               lf_capability capability, lf_status expected_status,
                               uint32_t expected_supported) {
   uint32_t supported = UINT32_MAX;
-  const lf_status status = lf_get_capability(profile_id, capability, &supported);
+  const lf_status status =
+      lf_get_capability(profile_id, NULL, capability, &supported);
   if (status != expected_status || supported != expected_supported) {
     (void)fprintf(stderr,
                   "synthetic_host: capability %s expected %s/%u, got %s/%u\n",
@@ -62,7 +69,7 @@ int main(void) {
   size_t row_index = 0U;
 
   {
-    const lf_status status = lf_get_profile("synthetic-v1", &profile);
+    const lf_status status = lf_get_profile("synthetic-v1", NULL, &profile);
     if (status != LF_OK) {
       report_status("profile query", status);
       goto cleanup;
